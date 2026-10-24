@@ -36,7 +36,7 @@
  */
 
 import { join } from "node:path";
-import type { EngineConfig } from "@hyperframes/engine";
+import type { ChromaSubsampling, EngineConfig } from "@hyperframes/engine";
 import { suggestMatchingPreset, type CanvasResolution } from "@hyperframes/core";
 import type { CompiledComposition } from "../../htmlCompiler.js";
 import { compileForRender } from "../../htmlCompiler.js";
@@ -150,6 +150,28 @@ function adaptAspectAgnosticResolution(
     effectiveResolution: flipped,
   });
   return flipped;
+}
+
+/**
+ * 4:4:4 output captures lossless opaque PNG. drawElement's self-verification and
+ * worker-encode drain are JPEG-only and its PNG path is built for transparent
+ * output, so the render uses the platform's baseline capture instead. No R&D bypass:
+ * a drawElement JPEG fallback would ship 4:2:0 colour in a 4:4:4 file.
+ * Returns the compile gate that applies after this check.
+ */
+function applyChroma444Gate(
+  cfg: EngineConfig,
+  chromaSubsampling: ChromaSubsampling | undefined,
+  gate: string | undefined,
+  log: ProducerLogger,
+): string | undefined {
+  if (!cfg.useDrawElement || chromaSubsampling !== "444") return gate;
+  cfg.useDrawElement = false;
+  log.info(
+    "[Render] Fast capture: chromaSubsampling 444 captures lossless PNG frames, so disabling " +
+      "drawElementImage for this render. Capture uses the platform's baseline route.",
+  );
+  return "chroma_444";
 }
 
 export async function runCompileStage(input: CompileStageInput): Promise<CompileStageResult> {
@@ -286,18 +308,7 @@ export async function runCompileStage(input: CompileStageInput): Promise<Compile
         "so page-side compositing stays available.",
     );
   }
-  // 4:4:4 output captures lossless opaque PNG. drawElement's self-verification and
-  // worker-encode drain are JPEG-only and its PNG path is built for transparent
-  // output, so the render uses the platform's baseline capture instead. No R&D bypass:
-  // a drawElement JPEG fallback would ship 4:2:0 colour in a 4:4:4 file.
-  if (cfg.useDrawElement && job.config.chromaSubsampling === "444") {
-    cfg.useDrawElement = false;
-    deCompileGate = "chroma_444";
-    log.info(
-      "[Render] Fast capture: chromaSubsampling 444 captures lossless PNG frames, so disabling " +
-        "drawElementImage for this render. Capture uses the platform's baseline route.",
-    );
-  }
+  deCompileGate = applyChroma444Gate(cfg, job.config.chromaSubsampling, deCompileGate, log);
   // Whenever a compile-time gate cleared useDrawElement, restore page-side
   // compositing — but ONLY when resolveConfig auto-disabled it because
   // drawElement was going to run. An explicit enablePageSideCompositing:false
