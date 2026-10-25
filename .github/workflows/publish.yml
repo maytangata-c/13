@@ -322,3 +322,31 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           REPO: ${{ github.repository }}
         run: gh release upload "v${VERSION}" dist/hyperframes-agent-plugin.zip dist/hyperframes-agent-plugin.sha256 dist/hyperframes-agent-plugin.json --repo "$REPO" --clobber
+
+  # After npm and the release, so a failure here cannot block either.
+  claude-plugin:
+    name: Claude Code plugin branch
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    if: >-
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'release/v')
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - name: Push the claude-plugin branch through the API so GitHub signs the commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          VERSION: ${{ github.event.pull_request.head.ref }}
+        run: |
+          out="$(mktemp -d)"
+          node scripts/build-claude-plugin.mjs "$out"
+          node scripts/push-claude-plugin.mjs "$out" claude-plugin "chore: claude plugin ${VERSION#release/}"

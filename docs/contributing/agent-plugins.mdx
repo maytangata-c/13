@@ -7,6 +7,13 @@ description: "Build, verify, and publish HyperFrames plugin packages from one co
 Cursor, Codex, and Gemini manifests share the CLI release version. Keep vendor
 manifests for existing clients while the portable format is adopted.
 
+Each stable release also pushes a `claude-plugin` branch, which the publish workflow
+rebuilds from `skills/` at every release (`scripts/build-claude-plugin.mjs`). It
+holds a `hyperframes` and a `core-skills` folder with no `package.json`, so Claude
+Code never tries to install the monorepo's dependencies. The branch is one parentless commit made through the GitHub API,
+because the organization requires signed commits and a runner's own commit is
+unsigned. A skills change reaches Claude Code at the next release.
+
 ## Build a committed release
 
 Use the normal reviewed [release process](/contributing/release-channels).
