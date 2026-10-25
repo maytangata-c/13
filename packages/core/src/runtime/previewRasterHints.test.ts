@@ -172,6 +172,37 @@ describe("setPreviewRasterScale", () => {
     reads.mockRestore();
   });
 
+  it("reads no computed style for a mounted scene that nothing gives a hint", async () => {
+    setPreviewRasterScale(0.5);
+    const reads = vi.spyOn(window, "getComputedStyle");
+    const scene = document.createElement("div");
+    const sheet = document.createElement("style");
+    sheet.textContent = ".mc-layer { position: absolute }";
+    scene.append(sheet);
+    for (let i = 0; i < 50; i += 1)
+      layer("position: absolute; left: 4px", scene).className = "mc-layer";
+    document.body.append(scene);
+    await Promise.resolve();
+    document.body.append(layer("position: absolute", document.createElement("div")));
+    await Promise.resolve();
+    const readCount = reads.mock.calls.length;
+    reads.mockRestore();
+    expect(readCount).toBe(0);
+  });
+
+  it("marks a layer added later that only a grouped stylesheet rule hints", async () => {
+    const sheet = document.createElement("style");
+    sheet.textContent = "@media all { .late-hinted { will-change: transform } }";
+    document.head.append(sheet);
+    setPreviewRasterScale(0.5);
+    const late = layer("position: absolute");
+    late.className = "late-hinted";
+    const plain = layer("position: absolute");
+    await Promise.resolve();
+    expect([late, plain].map(marked)).toEqual([true, false]);
+    sheet.remove();
+  });
+
   it("re-checks the page when a linked stylesheet loads", async () => {
     const sheet = document.createElement("style");
     document.head.append(sheet);
