@@ -69,6 +69,12 @@ The detail behind the contract in `SKILL.md`. Full references: `npx hyperframes 
 - Use `fromTo`, not `from`, inside a scene: the host re-seeks the scene each time it shows, and `from` records its start state once, so it drifts on seek-back.
 - Never `add()` a scene's timeline to the root's; the runtime drives each scene itself, and nesting seeks it twice.
 
+## Mounting one composition file several times
+
+Mounting one file several times with the same `data-composition-id` (an id such as `step`) on every host is supported: the mounts share that attribute and differ by their own element `id` and `data-variable-values`. The runtime rewrites the repeated hosts to `step__hf1`, `step__hf2`, … (keeping the authored id on `data-hf-original-composition-id`) and scopes that mount's `document.querySelector`, GSAP targets and `window.__timelines["step"]` to it. Lint ignores `data-composition-src` hosts for the same reason: they are mounts, not composition roots.
+
+Inside the scene, target elements by class (`.sc`), never by `[data-composition-id="..."]`: that id is rewritten per mount, so `[data-composition-id="step"] .sc` matches nothing and the script throws once per mount. Use a class for anything inside a file you mount more than once — an element `id` repeats once per mount, so it can't stay unique across the page.
+
 ## Attributes you'll use most
 
 | Attribute                                      | Meaning                                                                                             |
