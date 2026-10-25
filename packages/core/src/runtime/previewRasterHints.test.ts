@@ -175,6 +175,7 @@ describe("setPreviewRasterScale", () => {
   it("reads no computed style for a mounted scene that nothing gives a hint", async () => {
     setPreviewRasterScale(0.5);
     const reads = vi.spyOn(window, "getComputedStyle");
+    const pageQueries = vi.spyOn(document, "querySelector");
     const scene = document.createElement("div");
     const sheet = document.createElement("style");
     sheet.textContent = ".mc-layer { position: absolute }";
@@ -185,9 +186,10 @@ describe("setPreviewRasterScale", () => {
     await Promise.resolve();
     document.body.append(layer("position: absolute", document.createElement("div")));
     await Promise.resolve();
-    const readCount = reads.mock.calls.length;
+    const counts = [reads.mock.calls.length, pageQueries.mock.calls.length];
     reads.mockRestore();
-    expect(readCount).toBe(0);
+    pageQueries.mockRestore();
+    expect(counts).toEqual([0, 0]);
   });
 
   it("marks a layer added later that only a grouped stylesheet rule hints", async () => {
