@@ -172,6 +172,66 @@ describe("setPreviewRasterScale", () => {
     reads.mockRestore();
   });
 
+  it("reads no computed style for a mounted scene that nothing gives a hint", async () => {
+    setPreviewRasterScale(0.5);
+    const reads = vi.spyOn(window, "getComputedStyle");
+    const pageQueries = vi.spyOn(document, "querySelector");
+    const scene = document.createElement("div");
+    const sheet = document.createElement("style");
+    sheet.textContent = ".mc-layer { position: absolute }";
+    scene.append(sheet);
+    for (let i = 0; i < 50; i += 1)
+      layer("position: absolute; left: 4px", scene).className = "mc-layer";
+    document.body.append(scene);
+    await Promise.resolve();
+    document.body.append(layer("position: absolute", document.createElement("div")));
+    await Promise.resolve();
+    const counts = [reads.mock.calls.length, pageQueries.mock.calls.length];
+    reads.mockRestore();
+    pageQueries.mockRestore();
+    expect(counts).toEqual([0, 0]);
+  });
+
+  it("marks a layer added later that only a grouped stylesheet rule hints", async () => {
+    const sheet = document.createElement("style");
+    sheet.textContent = "@media all { .late-hinted { will-change: transform } }";
+    document.head.append(sheet);
+    setPreviewRasterScale(0.5);
+    const late = layer("position: absolute");
+    late.className = "late-hinted";
+    const plain = layer("position: absolute");
+    await Promise.resolve();
+    expect([late, plain].map(marked)).toEqual([true, false]);
+    sheet.remove();
+  });
+
+  it("reads the stylesheets once, not for every batch of added layers", async () => {
+    setPreviewRasterScale(0.5);
+    const sheetReads = vi.spyOn(Document.prototype, "styleSheets", "get");
+    for (let frame = 0; frame < 3; frame += 1) {
+      layer("position: absolute");
+      await Promise.resolve();
+    }
+    const reads = sheetReads.mock.calls.length;
+    sheetReads.mockRestore();
+    expect(reads).toBeLessThanOrEqual(1);
+  });
+
+  it("sees a hint rule from a style that arrives while the preview is small", async () => {
+    setPreviewRasterScale(0.5);
+    layer("position: absolute");
+    await Promise.resolve();
+    const sheet = document.createElement("style");
+    sheet.textContent = ".arrived-hint { will-change: transform }";
+    document.head.append(sheet);
+    await Promise.resolve();
+    const late = layer("position: absolute");
+    late.className = "arrived-hint";
+    await Promise.resolve();
+    expect(marked(late)).toBe(true);
+    sheet.remove();
+  });
+
   it("re-checks the page when a linked stylesheet loads", async () => {
     const sheet = document.createElement("style");
     document.head.append(sheet);
