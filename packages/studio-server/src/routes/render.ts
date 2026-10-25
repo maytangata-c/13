@@ -22,7 +22,15 @@ const RENDER_MIME: Record<string, string> = {
   ".mov": "video/quicktime",
 };
 const RENDER_EXTENSIONS = Object.keys(RENDER_MIME);
-const RENDER_ARTIFACT_EXTENSIONS = [...RENDER_EXTENSIONS, ".meta.json"];
+// The producer writes a provenance receipt beside each output as `<output>.hf-render.json`.
+const RENDER_SIDECAR_EXTENSIONS = RENDER_EXTENSIONS.map(
+  (extension) => `${extension}.hf-render.json`,
+);
+const RENDER_ARTIFACT_EXTENSIONS = [
+  ...RENDER_EXTENSIONS,
+  ".meta.json",
+  ...RENDER_SIDECAR_EXTENSIONS,
+];
 
 function resolveRenderArtifacts(directories: readonly string[], jobId: string): string[] | null {
   const artifacts = [...new Set(directories)]
