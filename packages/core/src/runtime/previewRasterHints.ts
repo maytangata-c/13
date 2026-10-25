@@ -13,6 +13,7 @@ const RUNTIME_PLAYBACK_ATTRS = new Set<string>([...PREVIEW_ONLY_ATTRS, CLIP_HIDD
 
 let sheet: HTMLStyleElement | null = null;
 let observer: MutationObserver | null = null;
+let hintRuleSelector: string | null = null;
 const markedWith = new WeakMap<Element, string>();
 
 // Other hints (opacity, filter) make boundaries of their own, so only a pure transform hint goes.
@@ -82,7 +83,7 @@ function unmarkHolders(element: Element): void {
 }
 
 // Only an element hinted inline or by a rule can carry will-change; neither check reads style.
-function hintRules(): string {
+function readHintRules(): string {
   const selectors: string[] = [];
   const collect = (rules: CSSRuleList, relative: boolean): void => {
     for (const rule of rules) {
@@ -107,28 +108,30 @@ function hintRules(): string {
   return selectors.join(",");
 }
 
-function mayHint(element: Element, rules: string): boolean {
+// Re-read where the page is re-checked, when a style or link arrives or loads.
+function hintRules(): string {
+  return (hintRuleSelector ??= readHintRules());
+}
+
+function mayHint(element: Element): boolean {
   if ((element as HTMLElement).style?.getPropertyValue("will-change")) return true;
+  const rules = hintRules();
   return rules !== "" && element.matches(rules);
 }
 
 function followTree(root: Element, batch: FollowBatch): void {
-  batch.rules ??= hintRules();
   const decidedBeforeAnyWrite: Array<[Element, boolean]> = [];
   for (const element of [root, ...root.querySelectorAll("*")]) {
     if (batch.checked.has(element)) continue;
     batch.checked.add(element);
     const readOwnHints = element === root || batch.changed.has(element);
-    decidedBeforeAnyWrite.push([
-      element,
-      mayHint(element, batch.rules) && fits(element, readOwnHints),
-    ]);
+    decidedBeforeAnyWrite.push([element, mayHint(element) && fits(element, readOwnHints)]);
   }
   for (const [element, drop] of decidedBeforeAnyWrite) writeMark(element, drop);
   for (const [element] of decidedBeforeAnyWrite) unmarkHolders(element);
 }
 
-type FollowBatch = { changed: Set<Element>; checked: Set<Element>; rules?: string };
+type FollowBatch = { changed: Set<Element>; checked: Set<Element> };
 
 // Scripts restyle inline every frame, so only what can break a mark is looked at.
 function followStyle(element: Element): void {
@@ -150,9 +153,9 @@ function clearMarks(): void {
 // Every mark is decided before any is written, so the page restyles twice, not once per layer.
 function markLayers(): void {
   clearMarks();
-  const rules = hintRules();
+  hintRuleSelector = null;
   const layers = [...document.querySelectorAll("*")].filter(
-    (element) => mayHint(element, rules) && fits(element, true),
+    (element) => mayHint(element) && fits(element, true),
   );
   for (const layer of layers) layer.setAttribute(PREVIEW_RASTER_ATTR, "");
 }
@@ -201,6 +204,7 @@ function restore(): void {
   observer = null;
   sheet?.remove();
   sheet = null;
+  hintRuleSelector = null;
   clearMarks();
 }
 

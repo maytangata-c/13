@@ -205,6 +205,33 @@ describe("setPreviewRasterScale", () => {
     sheet.remove();
   });
 
+  it("reads the stylesheets once, not for every batch of added layers", async () => {
+    setPreviewRasterScale(0.5);
+    const sheetReads = vi.spyOn(Document.prototype, "styleSheets", "get");
+    for (let frame = 0; frame < 3; frame += 1) {
+      layer("position: absolute");
+      await Promise.resolve();
+    }
+    const reads = sheetReads.mock.calls.length;
+    sheetReads.mockRestore();
+    expect(reads).toBeLessThanOrEqual(1);
+  });
+
+  it("sees a hint rule from a style that arrives while the preview is small", async () => {
+    setPreviewRasterScale(0.5);
+    layer("position: absolute");
+    await Promise.resolve();
+    const sheet = document.createElement("style");
+    sheet.textContent = ".arrived-hint { will-change: transform }";
+    document.head.append(sheet);
+    await Promise.resolve();
+    const late = layer("position: absolute");
+    late.className = "arrived-hint";
+    await Promise.resolve();
+    expect(marked(late)).toBe(true);
+    sheet.remove();
+  });
+
   it("re-checks the page when a linked stylesheet loads", async () => {
     const sheet = document.createElement("style");
     document.head.append(sheet);
