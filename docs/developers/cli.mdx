@@ -48,6 +48,10 @@ The CLI also renders in batches and from variables, writes image sequences and
 several video formats, and runs in the cloud — managed, on AWS Lambda, or on
 Google Cloud Run. Most commands take `--json` when you need to read the result from a script.
 
+For workers launched through `runCancellableProcess`, diagnostics preserve
+Unicode filenames and non-English text across output chunks. Its output limit
+counts the combined UTF-8 bytes from standard output and standard error.
+
 Start with the simple command, then open the [full reference](/packages/cli) for the exact options needed by automation or infrastructure.
 
 Before preview and render, HyperFrames stops headless Chrome processes left
