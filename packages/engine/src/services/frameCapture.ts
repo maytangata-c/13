@@ -70,6 +70,7 @@ import {
   pageContentExceedsCaptureHeight,
   pageScreenshotCapture,
   initTransparentBackground,
+  capturesAlpha,
   shouldDefaultCaptureBeyondViewport,
 } from "./screenshotService.js";
 import {
@@ -979,7 +980,7 @@ async function initDrawElementOrTransparentBackground(
     const gpuBackend = await detectGpuBackend(page);
     session.isSwiftShader = gpuBackend.isSwiftShader;
     session.gpuRenderer = classifyGpuRenderer(gpuBackend.renderer);
-    const transparent = session.options.format === "png";
+    const transparent = capturesAlpha(session.options);
     async function routeToFallback(): Promise<void> {
       session.captureMode = session.launchCaptureMode;
       if (transparent) {
@@ -1179,7 +1180,7 @@ async function initDrawElementOrTransparentBackground(
       }
       await finalizeDrawElementInit(session, page, logInitPhase, { transparent, forceDE });
     }
-  } else if (session.options.format === "png") {
+  } else if (capturesAlpha(session.options)) {
     await initTransparentBackground(session.page);
   }
 }
@@ -1250,7 +1251,7 @@ export async function completeDeferredDrawElementInit(session: CaptureSession): 
   const logInitPhase = (phase: string) =>
     console.log(`[initSession:${session.captureMode}] ${phase} (deferred drawElement init)`);
   await finalizeDrawElementInit(session, page, logInitPhase, {
-    transparent: session.options.format === "png",
+    transparent: capturesAlpha(session.options),
     forceDE: process.env.HF_FORCE_DRAWELEMENT === "1",
   });
   session.deInitDeferred = false;
@@ -1280,7 +1281,7 @@ export async function createCaptureSession(
   const isLinux = process.platform === "linux";
   const forceScreenshot = config?.forceScreenshot ?? DEFAULT_CONFIG.forceScreenshot;
   const useDrawElement = config?.useDrawElement ?? false;
-  const drawElementTransparent = useDrawElement && options.format === "png";
+  const drawElementTransparent = useDrawElement && capturesAlpha(options);
   // drawElement and page-side shader compositing are mutually incompatible
   // capture strategies: drawElement reads the composition root's paint records
   // directly and skips the prepare→micro-screenshot→resolve protocol (the
@@ -3573,7 +3574,7 @@ export async function createStaticVerificationPage(session: CaptureSession): Pro
       page.evaluate(`document.fonts?.ready`),
       waitForOptionalTailwindReady(page, pageReadyTimeout),
     ]);
-    if (session.options.format === "png") await initTransparentBackground(page);
+    if (capturesAlpha(session.options)) await initTransparentBackground(page);
     return page;
   } catch (error) {
     await page.close().catch(() => {});

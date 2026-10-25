@@ -3533,6 +3533,7 @@ async function executeRenderPipeline(input: {
       height,
       fps: job.config.fps,
       format: captureImageFormat,
+      transparent: needsAlpha,
       quality:
         captureImageFormat === "png" ? undefined : resolveCaptureJpegQuality(job.config.quality),
       variables: job.config.variables,
