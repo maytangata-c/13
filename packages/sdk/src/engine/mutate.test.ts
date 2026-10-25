@@ -905,12 +905,110 @@ describe("setElementStyles key normalization", () => {
     expect(el.getAttribute("style")).toContain("color: blue");
   });
 
+  it("keeps comment markers inside an unquoted URL literal", () => {
+    const el = elWith(
+      "background-image: url(https://example.invalid/assets/*hero.png); color: red",
+    );
+    setElementStyles(el, { opacity: "0.5" });
+    expect(getElementStyles(el)).toEqual({
+      backgroundImage: "url(https://example.invalid/assets/*hero.png)",
+      color: "red",
+      opacity: "0.5",
+    });
+    setElementStyles(el, { opacity: null });
+    expect(el.getAttribute("style")).not.toContain("opacity");
+  });
+
   it("handles escaped quotes inside CSS string values", () => {
     const el = elWith("color: red");
     el.setAttribute("style", 'content: "a\\";b"; color: red');
     setElementStyles(el, { color: "blue" });
     expect(getElementStyles(el).content).toBe('"a\\";b"');
     expect(getElementStyles(el).color).toBe("blue");
+  });
+});
+
+describe("inline style priority", () => {
+  it.each(["red !important", "red ! \tImPoRtAnT", String.raw`red !/* ; ) */\000069 mportant/**/`])(
+    "retains %s over a later normal declaration",
+    (color) => {
+      const parsed = parseMutable('<h1 data-hf-id="hf-title"></h1>');
+      const el = parsed.document.querySelector("h1");
+      if (!el) throw new Error("missing fixture element");
+      el.setAttribute("style", `color: ${color}; color: blue; font-size: 48px`);
+      setElementStyles(el, { opacity: "0.5" });
+      expect(getElementStyles(el)).toEqual({ color, fontSize: "48px", opacity: "0.5" });
+      expect(el.getAttribute("style")).toContain(`color: ${color}`);
+    },
+  );
+
+  it("keeps the last declaration at equal priority", () => {
+    const parsed = parseMutable(
+      '<h1 style="color: red !important; color: green ! IMPORTANT; opacity: 0.1; opacity: 0.2"></h1>',
+    );
+    const el = parsed.document.querySelector("h1");
+    if (!el) throw new Error("missing fixture element");
+    expect(getElementStyles(el)).toEqual({ color: "green ! IMPORTANT", opacity: "0.2" });
+  });
+
+  it.each(["/*", "-/*"])("handles repeated comment markers after !%s", (prefix) => {
+    const parsed = parseMutable("<h1></h1>");
+    const el = parsed.document.querySelector("h1");
+    if (!el) throw new Error("missing fixture element");
+    const comments = "/**/".repeat(4096);
+    const invalid = `${prefix}${"*//*".repeat(4096)}*/#`;
+    el.setAttribute(
+      "style",
+      `--invalid: first !${invalid}; --invalid: later; --valid: first !${comments}important${comments}; --valid: later`,
+    );
+    setElementStyles(el, { opacity: "0.5" });
+    expect(getElementStyles(el)).toEqual({
+      "--invalid": "later",
+      "--valid": `first !${comments}important${comments}`,
+      opacity: "0.5",
+    });
+  });
+
+  it.each(["first", String.raw`first !\69`])(
+    "handles a long internal whitespace run after %s",
+    (prefix) => {
+      const parsed = parseMutable("<h1></h1>");
+      const el = parsed.document.querySelector("h1");
+      if (!el) throw new Error("missing fixture element");
+      el.setAttribute("style", `--value: ${prefix}${" ".repeat(100_000)}last; --value: later`);
+      setElementStyles(el, { opacity: "0.5" });
+      expect(getElementStyles(el)).toEqual({ "--value": "later", opacity: "0.5" });
+    },
+  );
+
+  it("distinguishes custom property literals and identifier boundaries from priority", () => {
+    const parsed = parseMutable("<h1></h1>");
+    const el = parsed.document.querySelector("h1");
+    if (!el) throw new Error("missing fixture element");
+    el.setAttribute(
+      "style",
+      String.raw`
+      --quoted: "!important"; --quoted: later;
+      --escaped: \!important; --escaped: later;
+      --function: fn(!important); --function: later;
+      --split: first !im/**/portant; --split: later;
+      --suffix: first !importantx; --suffix: later;
+      --real: "/*" !important; --real: later;
+    ` +
+        "--space: first !\u00a0important; --space: later; --end: first !important\u00a0; --end: later;",
+    );
+    setElementStyles(el, { opacity: "0.5" });
+    expect(getElementStyles(el)).toEqual({
+      "--quoted": "later",
+      "--escaped": "later",
+      "--function": "later",
+      "--split": "later",
+      "--suffix": "later",
+      "--real": '"/*" !important',
+      "--space": "later",
+      "--end": "later",
+      opacity: "0.5",
+    });
   });
 });
 

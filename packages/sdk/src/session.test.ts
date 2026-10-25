@@ -4,6 +4,7 @@
 
 import { describe, it, expect } from "vitest";
 import { openComposition } from "./session.js";
+import { createMemoryAdapter } from "./adapters/memory.js";
 import type { DraftProps, ElementAtPointResult, PreviewAdapter } from "./adapters/types.js";
 
 const BASE_HTML = `
@@ -861,4 +862,107 @@ describe("variable declarations (Composition API)", () => {
       { id: "brand-title", type: "string", label: "Title", default: "Hi" },
     ]);
   });
+});
+
+describe("editing duplicate inline declarations", () => {
+  const html =
+    '<h1 data-hf-id="hf-title" style="color:red !important;color:blue;font-size:48px">Release notes</h1>';
+
+  it("retains a long important value against many later ordinary declarations", async () => {
+    const color = `red${" ".repeat(48_000)}!important`;
+    const comp = await openComposition(
+      `<h1 data-hf-id="hf-title" style="color:${color};${"color:blue;".repeat(4800)}">Release notes</h1>`,
+    );
+    comp.setStyle("hf-title", { opacity: "0.5" });
+    expect(comp.getElement("hf-title")?.inlineStyles).toEqual({ color, opacity: "0.5" });
+    comp.dispose();
+  });
+
+  it("preserves priority through unrelated edits, persistence, reopen and history", async () => {
+    const persist = createMemoryAdapter();
+    const comp = await openComposition(html, { persist, coalesceMs: 0 });
+    comp.setStyle("hf-title", { opacity: "0.5" });
+    await comp.flush();
+    const saved = await persist.read("composition.html");
+    if (saved === undefined) throw new Error("missing persisted HTML");
+    const reopened = await openComposition(saved);
+    expect(reopened.getElement("hf-title")?.inlineStyles).toEqual({
+      color: "red !important",
+      fontSize: "48px",
+      opacity: "0.5",
+    });
+    expect(saved).toContain("color: red !important");
+    comp.undo();
+    expect(comp.getElement("hf-title")?.inlineStyles).toEqual({
+      color: "red !important",
+      fontSize: "48px",
+    });
+    comp.redo();
+    expect(comp.getElement("hf-title")?.inlineStyles.opacity).toBe("0.5");
+    comp.dispose();
+    reopened.dispose();
+  });
+
+  it("lets explicit replacement and removal override priority and undo restores it", async () => {
+    const comp = await openComposition(html, { coalesceMs: 0 });
+    comp.setStyle("hf-title", { color: "green" });
+    expect(comp.getElement("hf-title")?.inlineStyles.color).toBe("green");
+    comp.undo();
+    expect(comp.getElement("hf-title")?.inlineStyles.color).toBe("red !important");
+    comp.setStyle("hf-title", { color: null });
+    expect(comp.getElement("hf-title")?.inlineStyles.color).toBeUndefined();
+    comp.undo();
+    expect(comp.getElement("hf-title")?.inlineStyles.color).toBe("red !important");
+    comp.dispose();
+  });
+
+  it("retains priority when a batch rolls back an unrelated edit", async () => {
+    const comp = await openComposition(html, { coalesceMs: 0 });
+    expect(() =>
+      comp.batch(() => {
+        comp.setStyle("hf-title", { opacity: "0.5" });
+        throw new Error("cancelled");
+      }),
+    ).toThrow("cancelled");
+    expect(comp.getElement("hf-title")?.inlineStyles).toEqual({
+      color: "red !important",
+      fontSize: "48px",
+    });
+    comp.dispose();
+  });
+
+  it.each([
+    ["color", "red!important", "green!important/*", "green!important/**/"],
+    [
+      "--label",
+      "first!important",
+      "second!important/* unfinished",
+      "second!important/* unfinished*/",
+    ],
+  ])(
+    "closes an EOF comment on %s before appending an unrelated edit",
+    async (prop, first, last, value) => {
+      const persist = createMemoryAdapter();
+      const comp = await openComposition(
+        `<h1 data-hf-id="hf-title" style="${prop}:${first};${prop}:${last}">Release notes</h1>`,
+        { persist, coalesceMs: 0 },
+      );
+      comp.setStyle("hf-title", { opacity: "0.5" });
+      await comp.flush();
+      const saved = await persist.read("composition.html");
+      if (saved === undefined) throw new Error("Composition was not saved");
+      const reopened = await openComposition(saved);
+      expect(reopened.getElement("hf-title")?.inlineStyles).toEqual({
+        [prop]: value,
+        opacity: "0.5",
+      });
+      expect(saved).toContain(`${value}; opacity: 0.5`);
+      comp.undo();
+      expect(comp.getElement("hf-title")?.inlineStyles).toEqual({ [prop]: value });
+      comp.redo();
+      expect(comp.getElement("hf-title")?.inlineStyles).toEqual({ [prop]: value, opacity: "0.5" });
+      reopened.dispose();
+      comp.dispose();
+    },
+  );
 });

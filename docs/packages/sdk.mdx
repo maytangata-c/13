@@ -101,6 +101,8 @@ comp.setVariableValue("brandColor", "#6C5CE7");
 comp.removeElement("hf-old-caption");
 ```
 
+`setStyle()` preserves an existing `!important` declaration when you edit another property, even if a later declaration repeats the property without priority. Setting that property explicitly replaces its value and priority; passing `null` removes it. Undo restores the selected declaration, including its priority spelling.
+
 Use `batch()` when several mutations should become one undo entry, one persist write, and one change notification:
 
 ```typescript
